@@ -82,6 +82,33 @@ Future<PlayerData> loadStudentData() async {
   }
 }
 
+Future<void> writeToJson(String nameOfDataValToWrite, dynamic value) async {
+  try {
+    Directory documentsDirectory = await getApplicationDocumentsDirectory();
+    String appFolderPath = '${documentsDirectory.path}/BlackjackFlutterApp';
+    String jsonFilePath = '$appFolderPath/player_data.json';
+
+    final file = File(jsonFilePath);
+
+    if (!file.existsSync()) {
+      throw Exception("JSON file does not exist at path: $jsonFilePath");
+    }
+
+    // Load existing data
+    String contents = await file.readAsString();
+    Map<String, dynamic> jsonData = jsonDecode(contents);
+
+    // Update the specified key with the new value
+    jsonData[nameOfDataValToWrite] = value;
+
+    // Write updated JSON back to file
+    await file.writeAsString(jsonEncode(jsonData), flush: true);
+    debugPrint("Updated $nameOfDataValToWrite in JSON file.");
+  } catch (e) {
+    debugPrint("Error writing to JSON file: $e");
+  }
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -217,6 +244,7 @@ class _HomePageContentState extends State<HomePageContent> {
 
 class GameScreen extends StatefulWidget {
   static const routeName = '/gameScreen';
+
   const GameScreen({
     super.key,
     required this.name,
@@ -233,14 +261,21 @@ class GameScreen extends StatefulWidget {
   final Function(Future<PlayerData>) onStudentDataUpdated;
 
   @override
-  _GameScreenState createState() => _GameScreenState();
+  State<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> {
-  // This style object overrides the styles for the suits, replacing the
-  // image-based default implementation for the suit emblems with a text based
-  // implementation.
+  final TextEditingController _controller = TextEditingController();
+  double? _betValue;
+  late double _currentBalance;
 
+  List<int> deck = [];
+  List<int> playerCards = [];
+  List<int> dealerCards = [];
+  bool playerBust = false;
+  bool dealerBust = false;
+  
+  @override
   PlayingCardViewStyle myCardStyles = PlayingCardViewStyle(
     suitStyles: {
       Suit.spades: SuitStyle(
@@ -284,10 +319,25 @@ class _GameScreenState extends State<GameScreen> {
       Suit.joker: SuitStyle(builder: (context) => Container()),
     },
   );
+  @override
+  void initState() {
+    super.initState();
+    _currentBalance = widget.balance;
+    _controller.addListener(() {
+      setState(() {
+        _betValue = double.tryParse(_controller.text);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   PlayingCard playingCard(int cardNumber) {
     const List<CardValue> values = [
-      CardValue.king,
       CardValue.ace,
       CardValue.two,
       CardValue.three,
@@ -300,157 +350,241 @@ class _GameScreenState extends State<GameScreen> {
       CardValue.ten,
       CardValue.jack,
       CardValue.queen,
+      CardValue.king,
     ];
-
     const List<Suit> suits = [
       Suit.spades,
       Suit.hearts,
       Suit.clubs,
       Suit.diamonds,
     ];
-
-    CardValue value = values[cardNumber % 13];
-    Suit suit = suits[(cardNumber - 1) ~/ 13];
-
-    return PlayingCard(suit, value);
+    return PlayingCard(
+      suits[(cardNumber - 1) ~/ 13],
+      values[(cardNumber - 1) % 13],
+    );
   }
 
-  List<int> deck = [];
-  List<int> playerCards = [];
-  List<int> dealerCards = [];
-  bool playerBust = false;
-  bool dealerBust = false;
-
-  // Shuffle multiple standard decks together
-  List<int> shuffleDeck(int numStanDecks) {
+  List<int> shuffleDeck(int decks) {
     List<int> newDeck = [];
-    for (int k = 0; k < numStanDecks; k++) {
-      newDeck += List.generate(52, (index) => index + 1);
+    for (int i = 0; i < decks; i++) {
+      newDeck.addAll(List.generate(52, (i) => i + 1));
     }
     newDeck.shuffle();
     return newDeck;
   }
 
-  // Calculate the hand value, treating Aces as 1 or 11
-  int handValueCheck(List<int> hand) {
-    int value = 0;
+  int handValue(List<int> hand) {
+    print('handValue');
+    int total = 0;
     int aces = 0;
-
     for (int card in hand) {
       int rank = (card - 1) % 13 + 1;
-      if (rank > 10) {
-        value += 10;
-      } else if (rank == 1) {
-        aces += 1;
-        value += 11; // count aces as 11 for now
+      if (rank == 1) {
+        total += 11;
+        aces++;
+      } else if (rank >= 11) {
+        total += 10;
       } else {
-        value += rank;
+        total += rank;
       }
     }
-
-    // Adjust for aces if value > 21
-    while (value > 21 && aces > 0) {
-      value -= 10;
+    while (total > 21 && aces > 0) {
+      total -= 10;
       aces--;
     }
-
-    return value;
+    return total;
   }
 
-  // Draw a card for either player or dealer
-  void drawCard(List<int> hand, bool isPlayer) {
+  void drawCard(List<int> hand, {required bool isPlayer}) {
+    print('drawCard');
     if (deck.isEmpty) return;
-
-    int number = deck.removeLast();
-    hand.add(number);
-
-    int currentHandValue = handValueCheck(hand);
-
-    if (currentHandValue > 21) {
-      print(isPlayer ? 'Player busts' : 'Dealer busts');
-      if (isPlayer) {
-        playerBust = true;
-      } else {
-        dealerBust = true;
+    setState(() {
+      hand.add(deck.removeLast());
+      if (handValue(hand) > 21) {
+        if (isPlayer) {
+          playerBust = true;
+          playerStand();
+        } else {
+          dealerBust = true;
+        }
+      } else if (handValue(hand) == 21) {
+        playerStand();
       }
-    } else if (currentHandValue == 21) {
-      print(isPlayer ? 'Player hits blackjack' : 'Dealer hits blackjack');
-    }
+    });
   }
 
-  // Game setup
   void gameStart() {
-    // Reset all game state
-  deck = shuffleDeck(2); // or whatever number of decks you want
-  playerCards.clear();
-  dealerCards.clear();
-  playerBust = false;
-  dealerBust = false;
+    if (_betValue == null || _betValue! <= 0) return;
 
-  // Initial card draw
-  drawCard(playerCards, true);
-  drawCard(dealerCards, false);
-  drawCard(playerCards, true);
-  drawCard(dealerCards, false);
-  
-  print("Game started!");
+    setState(() {
+      deck = shuffleDeck(2);
+      playerCards = [];
+      dealerCards = [];
+      playerBust = false;
+      dealerBust = false;      
+
+      drawCard(playerCards, isPlayer: true);
+      drawCard(playerCards, isPlayer: true);
+      drawCard(dealerCards, isPlayer: false);
+    });
   }
 
-  // Player chooses to hit
   void playerHit() {
-    drawCard(playerCards, true);
+    drawCard(playerCards, isPlayer: true);
   }
 
-  // Player chooses to stand
   void playerStand() {
-    // Dealer draws until 17 or higher
-    while (handValueCheck(dealerCards) < 17 && !dealerBust) {
-      drawCard(dealerCards, false);
+    final playerValue = handValue(playerCards);
+    if (!playerBust && !(playerValue == 21)) {
+      while (handValue(dealerCards) < 17) {
+        drawCard(dealerCards, isPlayer: false);
+      }
     }
-
-    int dealerValue = handValueCheck(dealerCards);
-    int playerValue = handValueCheck(playerCards);
-
+    final dealerValue = handValue(dealerCards);
+    String result;
     if (playerBust) {
-      print("Dealer wins (Player busted)");
-    } else if (dealerBust) {
-      print("Player wins (Dealer busted)");
+      result = 'You busted, Dealer wins';
+      _currentBalance -= _betValue!;
+      writeToJson('balance', _currentBalance);
+    } else if (dealerBust || playerValue > dealerValue) {
+      result = 'You win!';
+      _currentBalance += _betValue!;
+      writeToJson('balance', _currentBalance);
     } else if (dealerValue > playerValue) {
-      print("Dealer wins");
-    } else if (dealerValue < playerValue) {
-      print("Player wins");
+      result = 'Dealer wins';
+      _currentBalance -= _betValue!;
+      writeToJson('balance', _currentBalance);
     } else {
-      print("Push (tie)");
+      result = 'Push';
     }
+    showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Game Result'),
+            content: Text(result),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context, rootNavigator: true).pop();
+                  setState(() {
+                    playerCards = [];
+                  });
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void placeBet() {
+    final bet = double.tryParse(_controller.text);
+
+    if (bet == null || bet <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a valid bet.')));
+      return;
+    }
+
+    if (bet > _currentBalance) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Insufficient balance.')));
+      return;
+    }
+
+    setState(() {
+      _betValue = bet;
+    });
+
+    gameStart();
+    print('test 2');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          Row(
-            children: [
-              Text("zuh"),
-              PlayingCardView(card: playingCard(1), style: myCardStyles),
-              PlayingCardView(card: playingCard(13), style: myCardStyles),
-            ],
-          ),
-          Column(
-            children: [
-              ElevatedButton(
-                onPressed: gameStart,
-                child: const Text('Start Game!!'),
+      appBar: AppBar(title: const Text('Blackjack')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text('Welcome, ${widget.name}!'),
+            Text('Balance: \$${_currentBalance.toStringAsFixed(2)}'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Enter your bet'),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: placeBet,
+              child: const Text('Place Bet & Start Game'),
+            ),
+            const Divider(),
+            if (playerCards.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Your Cards:'),
+                  Row(
+                    children:
+                        playerCards.map((cardNumber) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: SizedBox(
+                              width: 100,
+                              height: 150,
+                              child: PlayingCardView(
+                                card: playingCard(cardNumber),
+                                style: myCardStyles,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                  ),
+                  Text('Total: ${handValue(playerCards)}'),
+                  const SizedBox(height: 10),
+                  const Text('Dealer Cards:'),
+                  Row(
+                    children:
+                        dealerCards.map((cardNumber) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: SizedBox(
+                              width: 100,
+                              height: 150,
+                              child: PlayingCardView(
+                                card: playingCard(cardNumber),
+                                style: myCardStyles,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                  ),
+                  Text('Total: ${handValue(dealerCards)}'),
+                  const SizedBox(height: 20),
+                  if (!playerBust && handValue(playerCards) < 21)
+                    Row(
+                      children: [
+                        ElevatedButton(
+                          onPressed: playerHit,
+                          child: const Text('Hit'),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          onPressed: playerStand,
+                          child: const Text('Stand'),
+                        ),
+                      ],
+                    ),
+                ],
               ),
-              ElevatedButton(onPressed: playerHit, child: const Text('Hit')),
-              ElevatedButton(
-                onPressed: playerStand,
-                child: const Text('Stand'),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
