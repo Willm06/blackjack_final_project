@@ -274,8 +274,7 @@ class _GameScreenState extends State<GameScreen> {
   List<int> dealerCards = [];
   bool playerBust = false;
   bool dealerBust = false;
-  
-  @override
+
   PlayingCardViewStyle myCardStyles = PlayingCardViewStyle(
     suitStyles: {
       Suit.spades: SuitStyle(
@@ -407,7 +406,7 @@ class _GameScreenState extends State<GameScreen> {
         } else {
           dealerBust = true;
         }
-      } else if (handValue(hand) == 21) {
+      } else if (handValue(hand) == 21 && isPlayer) {
         playerStand();
       }
     });
@@ -421,7 +420,7 @@ class _GameScreenState extends State<GameScreen> {
       playerCards = [];
       dealerCards = [];
       playerBust = false;
-      dealerBust = false;      
+      dealerBust = false;
 
       drawCard(playerCards, isPlayer: true);
       drawCard(playerCards, isPlayer: true);
@@ -504,68 +503,85 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Blackjack')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text('Welcome, ${widget.name}!'),
-            Text('Balance: \$${_currentBalance.toStringAsFixed(2)}'),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Enter your bet'),
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(title: const Text('Blackjack')),
+    body: SizedBox.expand( // Ensures full-screen height/width
+      child: Stack(
+        children: [
+          // Full-screen background image
+          Positioned.fill(
+            child: Image.asset(
+              "assets/backgroundSWAG.jpg",
+              fit: BoxFit.cover,
             ),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: placeBet,
-              child: const Text('Place Bet & Start Game'),
-            ),
-            const Divider(),
-            if (playerCards.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Your Cards:'),
-                  Row(
-                    children:
-                        playerCards.map((cardNumber) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: SizedBox(
-                              width: 100,
-                              height: 150,
-                              child: PlayingCardView(
-                                card: playingCard(cardNumber),
-                                style: myCardStyles,
-                              ),
-                            ),
-                          );
-                        }).toList(),
+          ),
+          // Foreground content
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Welcome, ${widget.name}!',
+                    style: const TextStyle(fontSize: 18, color: Colors.white)),
+                Text('Balance: \$${_currentBalance.toStringAsFixed(2)}',
+                    style: const TextStyle(color: Colors.white)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _controller,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Enter your bet',
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
-                  Text('Total: ${handValue(playerCards)}'),
+                ),
+                const SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: placeBet,
+                  child: const Text('Place Bet & Start Game'),
+                ),
+                const SizedBox(height: 20),
+                if (playerCards.isNotEmpty) ...[
+                  const Text('Your Cards:',
+                      style: TextStyle(color: Colors.white)),
+                  Row(
+                    children: playerCards.map((cardNumber) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: SizedBox(
+                          width: 100,
+                          height: 150,
+                          child: PlayingCardView(
+                            card: playingCard(cardNumber),
+                            style: myCardStyles,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  Text('Total: ${handValue(playerCards)}',
+                      style: const TextStyle(color: Colors.white)),
                   const SizedBox(height: 10),
-                  const Text('Dealer Cards:'),
+                  const Text('Dealer Cards:',
+                      style: TextStyle(color: Colors.white)),
                   Row(
-                    children:
-                        dealerCards.map((cardNumber) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: SizedBox(
-                              width: 100,
-                              height: 150,
-                              child: PlayingCardView(
-                                card: playingCard(cardNumber),
-                                style: myCardStyles,
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                    children: dealerCards.map((cardNumber) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: SizedBox(
+                          width: 100,
+                          height: 150,
+                          child: PlayingCardView(
+                            card: playingCard(cardNumber),
+                            style: myCardStyles,
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
-                  Text('Total: ${handValue(dealerCards)}'),
+                  Text('Total: ${handValue(dealerCards)}',
+                      style: const TextStyle(color: Colors.white)),
                   const SizedBox(height: 20),
                   if (!playerBust && handValue(playerCards) < 21)
                     Row(
@@ -582,12 +598,14 @@ class _GameScreenState extends State<GameScreen> {
                       ],
                     ),
                 ],
-              ),
-          ],
-        ),
+              ],
+            ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class RuleScreen extends StatelessWidget {
