@@ -274,6 +274,7 @@ class _GameScreenState extends State<GameScreen> {
   List<int> dealerCards = [];
   bool playerBust = false;
   bool dealerBust = false;
+  bool cardNotShown = true;
 
   PlayingCardViewStyle myCardStyles = PlayingCardViewStyle(
     suitStyles: {
@@ -421,9 +422,11 @@ class _GameScreenState extends State<GameScreen> {
       dealerCards = [];
       playerBust = false;
       dealerBust = false;
+      cardNotShown = true;
 
       drawCard(playerCards, isPlayer: true);
       drawCard(playerCards, isPlayer: true);
+      drawCard(dealerCards, isPlayer: false);
       drawCard(dealerCards, isPlayer: false);
     });
   }
@@ -433,6 +436,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void playerStand() {
+    setState(() {
+      cardNotShown = false;
+    });
     final playerValue = handValue(playerCards);
     if (!playerBust && !(playerValue == 21)) {
       while (handValue(dealerCards) < 17) {
@@ -574,14 +580,15 @@ Widget build(BuildContext context) {
                           height: 150,
                           child: PlayingCardView(
                             card: playingCard(cardNumber),
+                            showBack: cardNotShown,
                             style: myCardStyles,
                           ),
                         ),
                       );
                     }).toList(),
                   ),
-                  Text('Total: ${handValue(dealerCards)}',
-                      style: const TextStyle(color: Colors.white)),
+                  // Text('Total: ${handValue(dealerCards)}',
+                  //    style: const TextStyle(color: Colors.white)),
                   const SizedBox(height: 20),
                   if (!playerBust && handValue(playerCards) < 21)
                     Row(
