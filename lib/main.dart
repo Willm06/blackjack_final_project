@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 // import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:playing_cards/playing_cards.dart';
+//audio
+//import 'package:just_audio/just_audio.dart';
 
 void main() {
   createAppFolder();
@@ -19,7 +21,7 @@ Future<void> createAppFolder() async {
   Directory appFolder = Directory(appFolderPath);
   if (!appFolder.existsSync()) {
     appFolder.createSync(recursive: true);
-    print("App folder created at: $appFolderPath");
+    debugPrint("App folder created at: $appFolderPath");
   }
 
   // Define file paths
@@ -33,12 +35,12 @@ Future<void> createAppFolder() async {
     File assetJsonFile = File('assets/player_data.json');
     if (assetJsonFile.existsSync()) {
       appJsonFile.writeAsStringSync(assetJsonFile.readAsStringSync());
-      print("JSON file copied to: $jsonFilePath");
+      debugPrint("JSON file copied to: $jsonFilePath");
     } else {
-      print("Asset JSON file not found.");
+      debugPrint("Asset JSON file not found.");
     }
   } else {
-    print("JSON file already exists at: $jsonFilePath");
+    debugPrint("JSON file already exists at: $jsonFilePath");
   }
 }
 
@@ -137,6 +139,7 @@ Future<PlayerData>? futureStudentData;
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  //late AudioPlayer _audioPlayer;
 
   void _onItemTapped(int index) {
     setState(() {
@@ -156,12 +159,51 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  //audio not working
+  /* 
+  Future<void> _playBackgroundAudio() async {
+  _audioPlayer = AudioPlayer();
+
+  try {
+    debugPrint("Setting loop mode...");
+    await _audioPlayer.setLoopMode(LoopMode.all);
+
+    debugPrint("Delaying audio load slightly...");
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    debugPrint("Loading audio asset...");
+    await _audioPlayer.setAsset('assets/audio/giornos_theme.mp3');
+    debugPrint("Audio loaded successfully!");
+
+    debugPrint("Starting playback...");
+    await _audioPlayer.play();
+    debugPrint("Audio playback started.");
+  } on PlayerException catch (e) {
+    debugPrint("PlayerException: ${e.message}");
+    debugPrint("PlayerException code: ${e.code}");
+  } on PlayerInterruptedException catch (e) {
+    debugPrint("Playback was interrupted: ${e.message}");
+  } catch (e) {
+    debugPrint("Unexpected error during audio playback: $e");
+  }
+}
+*/
+
   @override
   void initState() {
     super.initState();
     futureStudentData = loadStudentData();
+    //_playBackgroundAudio();
   }
 
+  //audio
+  /*
+  @override
+void dispose() {
+  _audioPlayer.dispose();
+  super.dispose();
+}
+*/
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -323,9 +365,11 @@ class _GameScreenState extends State<GameScreen> {
       Suit.joker: SuitStyle(builder: (context) => Container()),
     },
   );
+
   @override
   void initState() {
     super.initState();
+    deck = shuffleDeck(1);
     _currentBalance = widget.balance;
     _currentWins = widget.wins;
     _currentMatchesPlayed = widget.matchesPlayed;
@@ -380,7 +424,6 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   int handValue(List<int> hand) {
-    print('handValue');
     int total = 0;
     int aces = 0;
     for (int card in hand) {
@@ -402,9 +445,20 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void drawCard(List<int> hand, {required bool isPlayer}) {
-    print('drawCard');
-    if (deck.isEmpty) return;
     setState(() {
+      if (deck.isEmpty) {
+        deck = shuffleDeck(1);
+        if (playerCards.isNotEmpty) {
+          for (int i = 0; i < playerCards.length; i++) {
+            deck.remove(playerCards[i]);
+          }
+        }
+        if (dealerCards.isNotEmpty) {
+          for (int i = 0; i < dealerCards.length; i++) {
+            deck.remove(dealerCards[i]);
+          }
+        }
+      }
       hand.add(deck.removeLast());
       if (handValue(hand) > 21) {
         if (isPlayer) {
@@ -423,17 +477,22 @@ class _GameScreenState extends State<GameScreen> {
     if (_betValue == null || _betValue! <= 0) return;
 
     setState(() {
-      deck = shuffleDeck(2);
-      playerCards = [];
+      if (playerSplitHand.isNotEmpty) {
+        playerCards = playerSplitHand;
+        playerSplitHand = [];
+      } else {
+        playerCards = [];
+        drawCard(playerCards, isPlayer: true);
+      }
+      drawCard(playerCards, isPlayer: true);
+
       dealerCards = [];
+      drawCard(dealerCards, isPlayer: false);
+      drawCard(dealerCards, isPlayer: false);
+
       playerBust = false;
       dealerBust = false;
       cardNotShown = true;
-
-      drawCard(playerCards, isPlayer: true);
-      drawCard(playerCards, isPlayer: true);
-      drawCard(dealerCards, isPlayer: false);
-      drawCard(dealerCards, isPlayer: false);
     });
   }
 
@@ -441,7 +500,7 @@ class _GameScreenState extends State<GameScreen> {
     drawCard(playerCards, isPlayer: true);
   }
 
-  void playerStand() {
+  void playerStand() async {
     setState(() {
       cardNotShown = false;
     });
@@ -456,22 +515,22 @@ class _GameScreenState extends State<GameScreen> {
     if (playerBust) {
       result = 'You busted, Dealer wins';
       _currentBalance -= _betValue!;
-      writeToJson('balance', _currentBalance);
+      await writeToJson('balance', _currentBalance);
     } else if (dealerBust || playerValue > dealerValue) {
       result = 'You win!';
       _currentBalance += _betValue!;
       _currentWins++;
-      writeToJson('balance', _currentBalance);
-      writeToJson('wins', _currentWins);
+      await writeToJson('balance', _currentBalance);
+      await writeToJson('wins', _currentWins);
     } else if (dealerValue > playerValue) {
       result = 'Dealer wins';
       _currentBalance -= _betValue!;
-      writeToJson('balance', _currentBalance);
+      await writeToJson('balance', _currentBalance);
     } else {
       result = 'Push';
     }
     _currentMatchesPlayed++;
-    writeToJson('matches_played', _currentMatchesPlayed);
+    await writeToJson('matches_played', _currentMatchesPlayed);
 
     showDialog(
       context: context,
@@ -497,13 +556,19 @@ class _GameScreenState extends State<GameScreen> {
   bool validForSplit() {
     if (playerCards.length == 2) {
       int firstCard = (playerCards[0] - 1) % 13;
-      int secondCard = (playerCards[0] - 1) % 13;
+      int secondCard = (playerCards[1] - 1) % 13;
       if (firstCard == secondCard) {
         return true;
       } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cards must be the same value to split.')),
+        );
         return false;
       }
     } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can only split with two cards.')),
+      );
       return false;
     }
   }
@@ -513,7 +578,6 @@ class _GameScreenState extends State<GameScreen> {
       playerSplitHand.add(playerCards[1]);
       playerCards.removeAt(1);
       drawCard(playerCards, isPlayer: true);
-      drawCard(playerSplitHand, isPlayer: false);
     }
   }
 
@@ -553,7 +617,6 @@ class _GameScreenState extends State<GameScreen> {
     });
 
     gameStart();
-    print('test 2');
   }
 
   @override
@@ -659,14 +722,14 @@ class _GameScreenState extends State<GameScreen> {
                     ),
                     // Text('Total: ${handValue(dealerCards)}',
                     //    style: const TextStyle(color: Colors.white)),
-                    if (!(!playerBust && handValue(playerCards) < 21)) ...[
+                    if (!cardNotShown) ...[
                       const SizedBox(height: 10),
                       Text(
                         'Total: ${handValue(dealerCards)}',
                         style: const TextStyle(color: Colors.white),
                       ),
                     ],
-                    if (!playerBust && handValue(playerCards) < 21) ...[
+                    if (cardNotShown) ...[
                       const SizedBox(height: 20),
                       Row(
                         children: [
@@ -679,13 +742,44 @@ class _GameScreenState extends State<GameScreen> {
                             onPressed: playerStand,
                             child: const Text('Stand'),
                           ),
+                          const SizedBox(width: 10),
                           ElevatedButton(
                             onPressed: doubleDown,
                             child: const Text('Double Down'),
                           ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            onPressed: split,
+                            child: const Text('Split Hand'),
+                          ),
                         ],
                       ),
                     ],
+                  ],
+                  if (playerSplitHand.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Your Split Cards:',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    Row(
+                      children:
+                          playerSplitHand.map((cardNumber) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: SizedBox(
+                                width: 100,
+                                height: 150,
+                                child: PlayingCardView(
+                                  card: playingCard(cardNumber),
+                                  style: myCardStyles,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                    ),
                   ],
                 ],
               ),
@@ -732,6 +826,7 @@ class RuleScreen extends StatelessWidget {
             const Text(
               "After you and the dealer are both finished, whoever has a higher score will win",
             ),
+            const Text(""),
             const Text(""),
           ],
         ),

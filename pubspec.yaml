@@ -9,9 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  file_picker: ^9.0.2
+  file_picker: ^10.1.2
   path_provider: ^2.1.5
   playing_cards: ^0.4.1+11
+  just_audio: ^0.10.0
+
 
 dev_dependencies:
   flutter_test:
@@ -23,3 +25,4 @@ flutter:
   assets:
     - assets/player_data.json
     - assets/backgroundSWAG.jpg
+    - assets/audio/giornos_theme.mp3
