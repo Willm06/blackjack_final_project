@@ -5,8 +5,7 @@ import 'package:flutter/material.dart';
 // import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:playing_cards/playing_cards.dart';
-//audio
-//import 'package:just_audio/just_audio.dart';
+import 'dart:math';
 
 void main() {
   createAppFolder();
@@ -67,7 +66,7 @@ class PlayerData {
   }
 }
 
-Future<PlayerData> loadStudentData() async {
+Future<PlayerData> loadPlayerData() async {
   Directory? documentsDirectory = await getApplicationDocumentsDirectory();
   String appFolderPath = '${documentsDirectory.path}/BlackjackFlutterApp';
   String jsonFilePath = '$appFolderPath/player_data.json';
@@ -79,8 +78,8 @@ Future<PlayerData> loadStudentData() async {
     return PlayerData.fromJson(data);
   } catch (e) {
     //throw errow if that somehow fails
-    debugPrint("Error loading student data: $e");
-    throw Exception("Failed to load student data.");
+    debugPrint("Error loading player data: $e");
+    throw Exception("Failed to load player data.");
   }
 }
 
@@ -135,80 +134,40 @@ class HomePage extends StatefulWidget {
   _HomePageState createState() => _HomePageState();
 }
 
-Future<PlayerData>? futureStudentData;
+Future<PlayerData>? futurePlayerData;
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  //late AudioPlayer _audioPlayer;
 
   void _onItemTapped(int index) {
     setState(() {
-      futureStudentData = loadStudentData();
+      futurePlayerData = loadPlayerData();
       _selectedIndex = index;
     });
   }
 
-  void updateStudentData(Future<PlayerData> newData) {
+  void updatePlayerData(Future<PlayerData> newData) {
     setState(() {
-      futureStudentData = newData.catchError((error) {
+      futurePlayerData = newData.catchError((error) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error loading student data: $error")),
+          SnackBar(content: Text("Error loading player data: $error")),
         );
-        return loadStudentData(); // Revert to default data if loading fails
+        return loadPlayerData(); // Revert to default data if loading fails
       });
     });
   }
 
-  //audio not working
-  /* 
-  Future<void> _playBackgroundAudio() async {
-  _audioPlayer = AudioPlayer();
-
-  try {
-    debugPrint("Setting loop mode...");
-    await _audioPlayer.setLoopMode(LoopMode.all);
-
-    debugPrint("Delaying audio load slightly...");
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    debugPrint("Loading audio asset...");
-    await _audioPlayer.setAsset('assets/audio/giornos_theme.mp3');
-    debugPrint("Audio loaded successfully!");
-
-    debugPrint("Starting playback...");
-    await _audioPlayer.play();
-    debugPrint("Audio playback started.");
-  } on PlayerException catch (e) {
-    debugPrint("PlayerException: ${e.message}");
-    debugPrint("PlayerException code: ${e.code}");
-  } on PlayerInterruptedException catch (e) {
-    debugPrint("Playback was interrupted: ${e.message}");
-  } catch (e) {
-    debugPrint("Unexpected error during audio playback: $e");
-  }
-}
-*/
-
   @override
   void initState() {
     super.initState();
-    futureStudentData = loadStudentData();
-    //_playBackgroundAudio();
+    futurePlayerData = loadPlayerData();
   }
 
-  //audio
-  /*
-  @override
-void dispose() {
-  _audioPlayer.dispose();
-  super.dispose();
-}
-*/
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: FutureBuilder<PlayerData>(
-        future: futureStudentData,
+        future: futurePlayerData,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -222,13 +181,14 @@ void dispose() {
                 balance: snapshot.data!.balance,
                 wins: snapshot.data!.wins,
                 matchesPlayed: snapshot.data!.matchesPlayed,
+                onPlayerDataUpdated: updatePlayerData,
               ),
               GameScreen(
                 name: snapshot.data!.name,
                 balance: snapshot.data!.balance,
                 wins: snapshot.data!.wins,
                 matchesPlayed: snapshot.data!.matchesPlayed,
-                onStudentDataUpdated: updateStudentData,
+                onPlayerDataUpdated: updatePlayerData,
               ),
               RuleScreen(),
             ];
@@ -267,21 +227,192 @@ class HomePageContent extends StatefulWidget {
     required this.balance,
     required this.wins,
     required this.matchesPlayed,
+    required this.onPlayerDataUpdated,
   });
 
   final String name;
   final double balance;
   final int wins;
   final int matchesPlayed;
+  final Function(Future<PlayerData>) onPlayerDataUpdated;
 
   @override
   _HomePageContentState createState() => _HomePageContentState();
 }
 
 class _HomePageContentState extends State<HomePageContent> {
+  final TextEditingController _controller = TextEditingController();
+  String? _setNameTo;
+
+  void setName() async {
+    _setNameTo = _controller.text;
+    if (_setNameTo == '') {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a name.')));
+      return;
+    }
+    await writeToJson('name', _setNameTo);
+    widget.onPlayerDataUpdated(loadPlayerData());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      setState(() {
+        _setNameTo = _controller.text;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(appBar: AppBar(title: const Text('Home')));
+    return Scaffold(
+      appBar: AppBar(title: const Text('Home')),
+      backgroundColor: const Color.fromARGB(255, 15, 40, 16),
+      body: Column(
+        children: [
+          const SizedBox(height: 20),
+          Text(
+            'Welcome, ${widget.name}!',
+            style: const TextStyle(fontSize: 18, color: Colors.white),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _controller,
+            keyboardType: TextInputType.text,
+            decoration: const InputDecoration(
+              labelText: 'Enter your name',
+              filled: true,
+              fillColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton(onPressed: setName, child: const Text('Set Name')),
+          const SizedBox(height: 10),
+          Text(
+            'Balance: \$${widget.balance.toStringAsFixed(2)}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Matches Played: ${widget.matchesPlayed}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Wins: ${widget.wins}',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class FlipPlayingCard extends StatefulWidget {
+  const FlipPlayingCard({
+    super.key,
+    required this.playingCard,
+    required this.showFront,
+    required this.playingCardViewStyle,
+  });
+
+  final PlayingCard playingCard;
+  final bool showFront;
+  final PlayingCardViewStyle playingCardViewStyle;
+
+  @override
+  _FlipPlayingCardState createState() => _FlipPlayingCardState();
+}
+
+class _FlipPlayingCardState extends State<FlipPlayingCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+  late final bool _showFront;
+
+  @override
+  void initState() {
+    super.initState();
+    _showFront = widget.showFront;
+    _controller = AnimationController(
+      duration: Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    _animation = Tween<double>(begin: 0, end: 1).animate(_controller);
+  }
+
+  @override
+  void didUpdateWidget(covariant FlipPlayingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.showFront != widget.showFront) {
+      flipCard();
+    }
+  }
+
+  void flipCard() {
+    if (widget.showFront) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _buildFront() {
+    return PlayingCardView(
+      card: widget.playingCard,
+      showBack: !_showFront,
+      style: widget.playingCardViewStyle,
+    );
+  }
+
+  Widget _buildBack() {
+    return PlayingCardView(
+      card: widget.playingCard,
+      showBack: _showFront,
+      style: widget.playingCardViewStyle,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        final angle = _animation.value * pi;
+        final isFrontVisible = angle <= (pi / 2);
+        return Transform(
+          alignment: Alignment.center,
+          transform:
+              Matrix4.identity()
+                ..setEntry(3, 2, 0.001)
+                ..rotateY(angle),
+          child:
+              isFrontVisible
+                  ? _buildFront()
+                  : Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..rotateY(pi),
+                    child: _buildBack(),
+                  ),
+        );
+      },
+    );
   }
 }
 
@@ -294,14 +425,14 @@ class GameScreen extends StatefulWidget {
     required this.balance,
     required this.wins,
     required this.matchesPlayed,
-    required this.onStudentDataUpdated,
+    required this.onPlayerDataUpdated,
   });
 
   final String name;
   final double balance;
   final int wins;
   final int matchesPlayed;
-  final Function(Future<PlayerData>) onStudentDataUpdated;
+  final Function(Future<PlayerData>) onPlayerDataUpdated;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -320,7 +451,11 @@ class _GameScreenState extends State<GameScreen> {
   List<int> dealerCards = [];
   bool playerBust = false;
   bool dealerBust = false;
+  bool playerWin = false;
   bool cardNotShown = true;
+
+  List<int> indexPlayerCardsToShow = [];
+  List<int> indexDealerCardsToShow = [];
 
   PlayingCardViewStyle myCardStyles = PlayingCardViewStyle(
     suitStyles: {
@@ -468,15 +603,22 @@ class _GameScreenState extends State<GameScreen> {
           dealerBust = true;
         }
       } else if (handValue(hand) == 21 && isPlayer) {
-        playerStand();
+        playerWin = true;
+        Future.delayed(const Duration(milliseconds: 300), () {
+          setState(() {
+            playerStand();
+          });
+        });
       }
     });
   }
 
   void gameStart() {
     if (_betValue == null || _betValue! <= 0) return;
-
     setState(() {
+      indexDealerCardsToShow = [];
+      indexPlayerCardsToShow = [];
+
       if (playerSplitHand.isNotEmpty) {
         playerCards = playerSplitHand;
         playerSplitHand = [];
@@ -494,20 +636,55 @@ class _GameScreenState extends State<GameScreen> {
       dealerBust = false;
       cardNotShown = true;
     });
+    if (!playerWin) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        setState(() {
+          indexPlayerCardsToShow = [0, 1];
+          indexDealerCardsToShow = [0];
+        });
+      });
+    } else {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        setState(() {
+          indexPlayerCardsToShow = [0, 1];
+          indexDealerCardsToShow = [0, 1];
+        });
+      });
+    }
   }
 
   void playerHit() {
     drawCard(playerCards, isPlayer: true);
+    Future.delayed(const Duration(milliseconds: 300), () {
+      setState(() {
+        indexPlayerCardsToShow.add(playerCards.length - 1);
+      });
+    });
   }
 
   void playerStand() async {
     setState(() {
       cardNotShown = false;
+      indexDealerCardsToShow.add(1);
     });
+
+    await Future.delayed(const Duration(milliseconds: 300), () {
+      setState(() {
+        dealerPhase();
+      });
+    });
+  }
+
+  void dealerPhase() async {
     final playerValue = handValue(playerCards);
     if (!playerBust && !(playerValue == 21)) {
       while (handValue(dealerCards) < 17) {
         drawCard(dealerCards, isPlayer: false);
+        await Future.delayed(const Duration(milliseconds: 300), () {
+          setState(() {
+            indexDealerCardsToShow.add(dealerCards.length - 1);
+          });
+        });
       }
     }
     final dealerValue = handValue(dealerCards);
@@ -532,25 +709,27 @@ class _GameScreenState extends State<GameScreen> {
     _currentMatchesPlayed++;
     await writeToJson('matches_played', _currentMatchesPlayed);
 
-    showDialog(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text('Game Result'),
-            content: Text(result),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context, rootNavigator: true).pop();
-                  setState(() {
-                    playerCards = [];
-                  });
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-    );
+    Future.delayed(const Duration(milliseconds: 300), () {
+      showDialog(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              title: const Text('Game Result'),
+              content: Text(result),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context, rootNavigator: true).pop();
+                    setState(() {
+                      playerCards = [];
+                    });
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
+    });
   }
 
   bool validForSplit() {
@@ -561,7 +740,9 @@ class _GameScreenState extends State<GameScreen> {
         return true;
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cards must be the same value to split.')),
+          const SnackBar(
+            content: Text('Cards must be the same value to split.'),
+          ),
         );
         return false;
       }
@@ -573,11 +754,24 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  void split() {
+  void split() async {
+    int cardToSplit = playerCards[1];
     if (validForSplit()) {
-      playerSplitHand.add(playerCards[1]);
+      playerSplitHand.add(cardToSplit);
       playerCards.removeAt(1);
-      drawCard(playerCards, isPlayer: true);
+      setState(() {
+        indexPlayerCardsToShow.remove(1);
+      });
+      await Future.delayed(const Duration(milliseconds: 300), () {
+        setState(() {
+          drawCard(playerCards, isPlayer: true);
+        });
+      });
+      await Future.delayed(const Duration(milliseconds: 300), () {
+        setState(() {
+          indexPlayerCardsToShow.add(1);
+        });
+      });
     }
   }
 
@@ -617,6 +811,22 @@ class _GameScreenState extends State<GameScreen> {
     });
 
     gameStart();
+  }
+
+  bool dealerCardController(int index) {
+    if (indexDealerCardsToShow.contains(index)) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  bool playerCardController(int index) {
+    if (indexPlayerCardsToShow.contains(index)) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
   @override
@@ -671,7 +881,9 @@ class _GameScreenState extends State<GameScreen> {
                     ),
                     Row(
                       children:
-                          playerCards.map((cardNumber) {
+                          playerCards.asMap().entries.map((entry) {
+                            int index = entry.key;
+                            int cardNumber = entry.value;
                             return Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 4,
@@ -679,9 +891,10 @@ class _GameScreenState extends State<GameScreen> {
                               child: SizedBox(
                                 width: 100,
                                 height: 150,
-                                child: PlayingCardView(
-                                  card: playingCard(cardNumber),
-                                  style: myCardStyles,
+                                child: FlipPlayingCard(
+                                  playingCard: playingCard(cardNumber),
+                                  showFront: playerCardController(index),
+                                  playingCardViewStyle: myCardStyles,
                                 ),
                               ),
                             );
@@ -701,7 +914,6 @@ class _GameScreenState extends State<GameScreen> {
                           dealerCards.asMap().entries.map((entry) {
                             int index = entry.key;
                             int cardNumber = entry.value;
-
                             return Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 4,
@@ -709,12 +921,10 @@ class _GameScreenState extends State<GameScreen> {
                               child: SizedBox(
                                 width: 100,
                                 height: 150,
-                                child: PlayingCardView(
-                                  card: playingCard(cardNumber),
-                                  showBack:
-                                      cardNotShown &&
-                                      index != 0, // Show front for index 0
-                                  style: myCardStyles,
+                                child: FlipPlayingCard(
+                                  playingCard: playingCard(cardNumber),
+                                  showFront: dealerCardController(index),
+                                  playingCardViewStyle: myCardStyles,
                                 ),
                               ),
                             );
