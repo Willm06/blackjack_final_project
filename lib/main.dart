@@ -1,14 +1,18 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-// import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle;
 // import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:playing_cards/playing_cards.dart';
 import 'dart:math';
+import 'package:audioplayers/audioplayers.dart';
 
-void main() {
-  createAppFolder();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  print(await rootBundle.loadString('AssetManifest.json'));
+  await createAppFolder();
+  await playBackgroundMusic();
   runApp(const MaterialApp(title: 'Navigation Basics', home: MyApp()));
 }
 
@@ -135,6 +139,31 @@ class HomePage extends StatefulWidget {
 }
 
 Future<PlayerData>? futurePlayerData;
+
+AudioPlayer? _backgroundPlayer;
+
+Future<void> playBackgroundMusic() async {
+  print("Attempting to play background music...");
+
+  try {
+    // Try to load the asset
+    await rootBundle.load('assets/audio/giornos_theme.mp3');
+    print("Music file loaded successfully.");
+
+    // Proceed with playing the audio
+    _backgroundPlayer = AudioPlayer();
+    await _backgroundPlayer!.setSource(AssetSource('audio/giornos_theme.mp3'));
+    await _backgroundPlayer!.setReleaseMode(ReleaseMode.loop);
+    await _backgroundPlayer!.resume();
+    print("Music is playing.");
+  } catch (e) {
+    print("Error loading or playing music: $e");
+  }
+}
+
+Future<void> stopBackgroundMusic() async {
+  await _backgroundPlayer?.stop();
+}
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
@@ -567,9 +596,12 @@ class _GameScreenState extends State<GameScreen> {
   void _drawCard(List<int> hand, {required bool isPlayer}) {
     if (deck.isEmpty) _replenishDeck();
     final card = deck.removeLast();
-    hand.add(card);
+    setState(() {
+      hand.add(card);
+    });
+    int _myHandValue = _handValue(hand);
 
-    if (_handValue(hand) > 21) {
+    if (_myHandValue > 21) {
       setState(() {
         isPlayer ? playerBust = true : dealerBust = true;
       });
@@ -579,7 +611,7 @@ class _GameScreenState extends State<GameScreen> {
           _playerStand,
         ); // add delay
       }
-    } else if (_handValue(hand) == 21 && isPlayer) {
+    } else if (_myHandValue == 21 && isPlayer) {
       playerWin = true;
       Future.delayed(const Duration(milliseconds: 300), _playerStand);
     }
