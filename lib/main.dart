@@ -10,7 +10,7 @@ import 'package:audioplayers/audioplayers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  print(await rootBundle.loadString('AssetManifest.json'));
+  debugPrint(await rootBundle.loadString('AssetManifest.json'));
   await createAppFolder();
   await playBackgroundMusic();
   runApp(const MaterialApp(title: 'Navigation Basics', home: MyApp()));
@@ -651,8 +651,12 @@ class _GameScreenState extends State<GameScreen> {
   void _resetGame() {
     indexDealerCardsToShow.clear();
     indexPlayerCardsToShow.clear();
-    playerCards = playerSplitHand.isNotEmpty ? playerSplitHand : [];
-    playerSplitHand.clear();
+    if (playerSplitHand.isNotEmpty) {
+      playerCards = playerSplitHand;
+      playerSplitHand = [];
+    } else {
+      playerCards = [];
+    }
     dealerCards.clear();
 
     drawStartCards();
