@@ -449,6 +449,7 @@ class _GameScreenState extends State<GameScreen> {
   List<int> playerCards = [];
   List<int> playerSplitHand = [];
   List<int> dealerCards = [];
+
   bool playerBust = false;
   bool dealerBust = false;
   bool playerWin = false;
@@ -457,62 +458,18 @@ class _GameScreenState extends State<GameScreen> {
   List<int> indexPlayerCardsToShow = [];
   List<int> indexDealerCardsToShow = [];
 
-  PlayingCardViewStyle myCardStyles = PlayingCardViewStyle(
-    suitStyles: {
-      Suit.spades: SuitStyle(
-        builder:
-            (context) => const FittedBox(
-              fit: BoxFit.fitHeight,
-              child: Text("♠", style: TextStyle(fontSize: 500)),
-            ),
-        style: TextStyle(color: Colors.grey[800]),
-      ),
-      Suit.hearts: SuitStyle(
-        builder:
-            (context) => const FittedBox(
-              fit: BoxFit.fitHeight,
-              child: Text(
-                "♥",
-                style: TextStyle(fontSize: 500, color: Colors.red),
-              ),
-            ),
-        style: const TextStyle(color: Colors.red),
-      ),
-      Suit.diamonds: SuitStyle(
-        builder:
-            (context) => const FittedBox(
-              fit: BoxFit.fitHeight,
-              child: Text(
-                "♦",
-                style: TextStyle(fontSize: 500, color: Colors.red),
-              ),
-            ),
-        style: const TextStyle(color: Colors.red),
-      ),
-      Suit.clubs: SuitStyle(
-        builder:
-            (context) => const FittedBox(
-              fit: BoxFit.fitHeight,
-              child: Text("♣", style: TextStyle(fontSize: 500)),
-            ),
-        style: TextStyle(color: Colors.grey[800]),
-      ),
-      Suit.joker: SuitStyle(builder: (context) => Container()),
-    },
+  final PlayingCardViewStyle myCardStyles = PlayingCardViewStyle(
+    suitStyles: _buildSuitStyles(),
   );
 
   @override
   void initState() {
     super.initState();
-    deck = shuffleDeck(1);
     _currentBalance = widget.balance;
     _currentWins = widget.wins;
     _currentMatchesPlayed = widget.matchesPlayed;
-    _controller.addListener(() {
-      setState(() {
-        _betValue = double.tryParse(_controller.text);
-      });
-    });
+    deck = _shuffleDeck();
+    _controller.addListener(_updateBetValue);
   }
 
   @override
@@ -521,7 +478,40 @@ class _GameScreenState extends State<GameScreen> {
     super.dispose();
   }
 
-  PlayingCard playingCard(int cardNumber) {
+  void _updateBetValue() {
+    setState(() {
+      _betValue = double.tryParse(_controller.text);
+    });
+  }
+
+  static Map<Suit, SuitStyle> _buildSuitStyles() => {
+    Suit.spades: SuitStyle(
+      builder: (context) => _suitText("♠"),
+      style: TextStyle(color: Colors.grey[800]),
+    ),
+    Suit.hearts: SuitStyle(
+      builder: (context) => _suitText("♥", color: Colors.red),
+      style: const TextStyle(color: Colors.red),
+    ),
+    Suit.diamonds: SuitStyle(
+      builder: (context) => _suitText("♦", color: Colors.red),
+      style: const TextStyle(color: Colors.red),
+    ),
+    Suit.clubs: SuitStyle(
+      builder: (context) => _suitText("♣"),
+      style: TextStyle(color: Colors.grey[800]),
+    ),
+    Suit.joker: SuitStyle(builder: (context) => const SizedBox()),
+  };
+
+  static Widget _suitText(String symbol, {Color? color}) {
+    return FittedBox(
+      fit: BoxFit.fitHeight,
+      child: Text(symbol, style: TextStyle(fontSize: 500, color: color)),
+    );
+  }
+
+  PlayingCard _playingCard(int cardNumber) {
     const List<CardValue> values = [
       CardValue.ace,
       CardValue.two,
@@ -549,16 +539,11 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  List<int> shuffleDeck(int decks) {
-    List<int> newDeck = [];
-    for (int i = 0; i < decks; i++) {
-      newDeck.addAll(List.generate(52, (i) => i + 1));
-    }
-    newDeck.shuffle();
-    return newDeck;
+  List<int> _shuffleDeck() {
+    return List.generate(52, (i) => i + 1)..shuffle();
   }
 
-  int handValue(List<int> hand) {
+  int _handValue(List<int> hand) {
     int total = 0;
     int aces = 0;
     for (int card in hand) {
@@ -579,82 +564,79 @@ class _GameScreenState extends State<GameScreen> {
     return total;
   }
 
-  void drawCard(List<int> hand, {required bool isPlayer}) {
-    setState(() {
-      if (deck.isEmpty) {
-        deck = shuffleDeck(1);
-        if (playerCards.isNotEmpty) {
-          for (int i = 0; i < playerCards.length; i++) {
-            deck.remove(playerCards[i]);
-          }
-        }
-        if (dealerCards.isNotEmpty) {
-          for (int i = 0; i < dealerCards.length; i++) {
-            deck.remove(dealerCards[i]);
-          }
-        }
+  void _drawCard(List<int> hand, {required bool isPlayer}) {
+    if (deck.isEmpty) _replenishDeck();
+    final card = deck.removeLast();
+    hand.add(card);
+
+    if (_handValue(hand) > 21) {
+      setState(() {
+        isPlayer ? playerBust = true : dealerBust = true;
+      });
+      if (isPlayer) {
+        Future.delayed(
+          const Duration(milliseconds: 300),
+          _playerStand,
+        ); // add delay
       }
-      hand.add(deck.removeLast());
-      if (handValue(hand) > 21) {
-        if (isPlayer) {
-          playerBust = true;
-          playerStand();
-        } else {
-          dealerBust = true;
-        }
-      } else if (handValue(hand) == 21 && isPlayer) {
-        playerWin = true;
-        Future.delayed(const Duration(milliseconds: 300), () {
-          setState(() {
-            playerStand();
-          });
-        });
-      }
-    });
+    } else if (_handValue(hand) == 21 && isPlayer) {
+      playerWin = true;
+      Future.delayed(const Duration(milliseconds: 300), _playerStand);
+    }
+  }
+
+  void _replenishDeck() {
+    deck = _shuffleDeck();
+    deck.removeWhere(
+      (card) => playerCards.contains(card) || dealerCards.contains(card),
+    );
   }
 
   void gameStart() {
     if (_betValue == null || _betValue! <= 0) return;
+
     setState(() {
-      indexDealerCardsToShow = [];
-      indexPlayerCardsToShow = [];
-
-      if (playerSplitHand.isNotEmpty) {
-        playerCards = playerSplitHand;
-        playerSplitHand = [];
-      } else {
-        playerCards = [];
-        drawCard(playerCards, isPlayer: true);
-      }
-      drawCard(playerCards, isPlayer: true);
-
-      dealerCards = [];
-      drawCard(dealerCards, isPlayer: false);
-      drawCard(dealerCards, isPlayer: false);
-
-      playerBust = false;
-      dealerBust = false;
-      cardNotShown = true;
+      _resetGame();
     });
-    if (!playerWin) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        setState(() {
-          indexPlayerCardsToShow = [0, 1];
-          indexDealerCardsToShow = [0];
-        });
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      setState(() {
+        indexPlayerCardsToShow = [0, 1];
+        indexDealerCardsToShow = [0];
       });
-    } else {
-      Future.delayed(const Duration(milliseconds: 300), () {
+    });
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (_handValue(playerCards) == 21) {
         setState(() {
-          indexPlayerCardsToShow = [0, 1];
-          indexDealerCardsToShow = [0, 1];
+          playerWin = true;
+          indexDealerCardsToShow.add(1); // Flip hidden dealer card
         });
-      });
-    }
+        _evaluateWinner(); // Immediately evaluate winner
+      }
+    });
+  }
+
+  void _resetGame() {
+    indexDealerCardsToShow.clear();
+    indexPlayerCardsToShow.clear();
+    playerCards = playerSplitHand.isNotEmpty ? playerSplitHand : [];
+    playerSplitHand.clear();
+    dealerCards.clear();
+
+    drawStartCards();
+    playerBust = dealerBust = false;
+    cardNotShown = true;
+  }
+
+  void drawStartCards() {
+    if (playerCards.isEmpty) _drawCard(playerCards, isPlayer: true);
+    _drawCard(playerCards, isPlayer: true);
+    _drawCard(dealerCards, isPlayer: false);
+    _drawCard(dealerCards, isPlayer: false);
   }
 
   void playerHit() {
-    drawCard(playerCards, isPlayer: true);
+    _drawCard(playerCards, isPlayer: true);
     Future.delayed(const Duration(milliseconds: 300), () {
       setState(() {
         indexPlayerCardsToShow.add(playerCards.length - 1);
@@ -662,53 +644,57 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  void playerStand() async {
+  void _playerStand() async {
     setState(() {
       cardNotShown = false;
       indexDealerCardsToShow.add(1);
     });
 
-    await Future.delayed(const Duration(milliseconds: 300), () {
-      setState(() {
-        dealerPhase();
-      });
-    });
+    await Future.delayed(const Duration(milliseconds: 300));
+    await _dealerPhase();
   }
 
-  void dealerPhase() async {
-    final playerValue = handValue(playerCards);
-    if (!playerBust && !(playerValue == 21)) {
-      while (handValue(dealerCards) < 17) {
-        drawCard(dealerCards, isPlayer: false);
-        await Future.delayed(const Duration(milliseconds: 300), () {
-          setState(() {
-            indexDealerCardsToShow.add(dealerCards.length - 1);
-          });
-        });
+  Future<void> _dealerPhase() async {
+    final playerValue = _handValue(playerCards);
+    if (!playerBust && playerValue != 21) {
+      while (_handValue(dealerCards) < 17) {
+        _drawCard(dealerCards, isPlayer: false);
+        await Future.delayed(const Duration(milliseconds: 300));
+        setState(() => indexDealerCardsToShow.add(dealerCards.length - 1));
       }
     }
-    final dealerValue = handValue(dealerCards);
+    await _evaluateWinner();
+  }
+
+  Future<void> _evaluateWinner() async {
+    final playerValue = _handValue(playerCards);
+    final dealerValue = _handValue(dealerCards);
+
     String result;
     if (playerBust) {
       result = 'You busted, Dealer wins';
       _currentBalance -= _betValue!;
-      await writeToJson('balance', _currentBalance);
     } else if (dealerBust || playerValue > dealerValue) {
       result = 'You win!';
       _currentBalance += _betValue!;
       _currentWins++;
-      await writeToJson('balance', _currentBalance);
-      await writeToJson('wins', _currentWins);
     } else if (dealerValue > playerValue) {
       result = 'Dealer wins';
       _currentBalance -= _betValue!;
-      await writeToJson('balance', _currentBalance);
     } else {
       result = 'Push';
     }
+
     _currentMatchesPlayed++;
+
+    await writeToJson('balance', _currentBalance);
+    await writeToJson('wins', _currentWins);
     await writeToJson('matches_played', _currentMatchesPlayed);
 
+    _showResultDialog(result);
+  }
+
+  void _showResultDialog(String result) {
     Future.delayed(const Duration(milliseconds: 300), () {
       showDialog(
         context: context,
@@ -721,7 +707,7 @@ class _GameScreenState extends State<GameScreen> {
                   onPressed: () {
                     Navigator.of(context, rootNavigator: true).pop();
                     setState(() {
-                      playerCards = [];
+                      playerCards.clear();
                     });
                   },
                   child: const Text('OK'),
@@ -732,85 +718,49 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  bool validForSplit() {
+  bool _canSplit() {
     if (playerCards.length == 2) {
-      int firstCard = (playerCards[0] - 1) % 13;
-      int secondCard = (playerCards[1] - 1) % 13;
-      if (firstCard == secondCard) {
-        return true;
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cards must be the same value to split.'),
-          ),
-        );
-        return false;
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can only split with two cards.')),
-      );
-      return false;
+      final first = (playerCards[0] - 1) % 13;
+      final second = (playerCards[1] - 1) % 13;
+      return first == second;
     }
+    return false;
   }
 
-  void split() async {
-    int cardToSplit = playerCards[1];
-    if (validForSplit()) {
-      playerSplitHand.add(cardToSplit);
-      playerCards.removeAt(1);
-      setState(() {
-        indexPlayerCardsToShow.remove(1);
-      });
-      await Future.delayed(const Duration(milliseconds: 300), () {
-        setState(() {
-          drawCard(playerCards, isPlayer: true);
-        });
-      });
-      await Future.delayed(const Duration(milliseconds: 300), () {
-        setState(() {
-          indexPlayerCardsToShow.add(1);
-        });
-      });
+  Future<void> split() async {
+    if (!_canSplit()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cards must be same value to split.')),
+      );
+      return;
     }
+
+    final cardToSplit = playerCards.removeAt(1);
+    playerSplitHand.add(cardToSplit);
+
+    setState(() {
+      indexPlayerCardsToShow.remove(1);
+    });
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    _drawCard(playerCards, isPlayer: true);
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    setState(() {
+      indexPlayerCardsToShow.add(1);
+    });
   }
 
   void doubleDown() {
-    if (_betValue! * 2 <= _currentBalance) {
-      _betValue = _betValue! * 2;
+    if ((_betValue ?? 0) * 2 <= _currentBalance) {
+      _betValue = (_betValue ?? 0) * 2;
       playerHit();
-      if (playerBust == false) {
-        playerStand();
-      }
+      if (!playerBust) _playerStand();
     } else {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Insufficient balance.')));
     }
-  }
-
-  void placeBet() {
-    final bet = double.tryParse(_controller.text);
-
-    if (bet == null || bet <= 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Enter a valid bet.')));
-      return;
-    }
-
-    if (bet > _currentBalance) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Insufficient balance.')));
-      return;
-    }
-
-    setState(() {
-      _betValue = bet;
-    });
-
-    gameStart();
   }
 
   bool dealerCardController(int index) {
@@ -870,7 +820,7 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                   const SizedBox(height: 10),
                   ElevatedButton(
-                    onPressed: placeBet,
+                    onPressed: gameStart,
                     child: const Text('Place Bet & Start Game'),
                   ),
                   const SizedBox(height: 20),
@@ -892,7 +842,7 @@ class _GameScreenState extends State<GameScreen> {
                                 width: 100,
                                 height: 150,
                                 child: FlipPlayingCard(
-                                  playingCard: playingCard(cardNumber),
+                                  playingCard: _playingCard(cardNumber),
                                   showFront: playerCardController(index),
                                   playingCardViewStyle: myCardStyles,
                                 ),
@@ -901,7 +851,7 @@ class _GameScreenState extends State<GameScreen> {
                           }).toList(),
                     ),
                     Text(
-                      'Total: ${handValue(playerCards)}',
+                      'Total: ${_handValue(playerCards)}',
                       style: const TextStyle(color: Colors.white),
                     ),
                     const SizedBox(height: 10),
@@ -922,7 +872,7 @@ class _GameScreenState extends State<GameScreen> {
                                 width: 100,
                                 height: 150,
                                 child: FlipPlayingCard(
-                                  playingCard: playingCard(cardNumber),
+                                  playingCard: _playingCard(cardNumber),
                                   showFront: dealerCardController(index),
                                   playingCardViewStyle: myCardStyles,
                                 ),
@@ -935,7 +885,7 @@ class _GameScreenState extends State<GameScreen> {
                     if (!cardNotShown) ...[
                       const SizedBox(height: 10),
                       Text(
-                        'Total: ${handValue(dealerCards)}',
+                        'Total: ${_handValue(dealerCards)}',
                         style: const TextStyle(color: Colors.white),
                       ),
                     ],
@@ -949,7 +899,7 @@ class _GameScreenState extends State<GameScreen> {
                           ),
                           const SizedBox(width: 10),
                           ElevatedButton(
-                            onPressed: playerStand,
+                            onPressed: _playerStand,
                             child: const Text('Stand'),
                           ),
                           const SizedBox(width: 10),
@@ -983,7 +933,7 @@ class _GameScreenState extends State<GameScreen> {
                                 width: 100,
                                 height: 150,
                                 child: PlayingCardView(
-                                  card: playingCard(cardNumber),
+                                  card: _playingCard(cardNumber),
                                   style: myCardStyles,
                                 ),
                               ),
