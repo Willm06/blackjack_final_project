@@ -625,7 +625,14 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void gameStart() {
-    if (_betValue == null || _betValue! <= 0) return;
+    _updateBetValue();
+    
+    if (_betValue == null ||( _betValue! <= 0 || _betValue! > _currentBalance)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid bet.')),
+      );
+      return;
+    }
 
     setState(() {
       _resetGame();
@@ -665,10 +672,10 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void drawStartCards() {
+    _drawCard(dealerCards, isPlayer: false);
+    _drawCard(dealerCards, isPlayer: false);
     if (playerCards.isEmpty) _drawCard(playerCards, isPlayer: true);
     _drawCard(playerCards, isPlayer: true);
-    _drawCard(dealerCards, isPlayer: false);
-    _drawCard(dealerCards, isPlayer: false);
   }
 
   void playerHit() {
@@ -826,7 +833,7 @@ class _GameScreenState extends State<GameScreen> {
             // Full-screen background image
             Positioned.fill(
               child: Image.asset(
-                "assets/backgroundSWAG.jpg",
+                "assets/gambling.jpg", filterQuality: FilterQuality.none,
                 fit: BoxFit.cover,
               ),
             ),

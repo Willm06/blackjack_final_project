@@ -23,5 +23,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/player_data.json
-    - assets/backgroundSWAG.jpg
+    - assets/gambling.jpg
     - assets/audio/giornos_theme.mp3
