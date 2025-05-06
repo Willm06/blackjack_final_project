@@ -1,12 +1,11 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-// import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:playing_cards/playing_cards.dart';
-import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
+import 'dart:math';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,30 +16,26 @@ void main() async {
 }
 
 Future<void> createAppFolder() async {
-  Directory? documentsDirectory = await getApplicationDocumentsDirectory();
+  Directory documentsDirectory = await getApplicationDocumentsDirectory();
   String appFolderPath = '${documentsDirectory.path}/BlackjackFlutterApp';
 
-  //creates an app
   Directory appFolder = Directory(appFolderPath);
-  if (!appFolder.existsSync()) {
-    appFolder.createSync(recursive: true);
+  if (!await appFolder.exists()) {
+    await appFolder.create(recursive: true);
     debugPrint("App folder created at: $appFolderPath");
   }
 
-  // Define file paths
   String jsonFilePath = '$appFolderPath/player_data.json';
-
-  // Copy contents from assets if they don't exist in the app folder
   File appJsonFile = File(jsonFilePath);
 
-  // Check if the JSON file exists in the application folder
-  if (!appJsonFile.existsSync()) {
-    File assetJsonFile = File('assets/player_data.json');
-    if (assetJsonFile.existsSync()) {
-      appJsonFile.writeAsStringSync(assetJsonFile.readAsStringSync());
+  if (!await appJsonFile.exists()) {
+    try {
+      // Load from asset bundle
+      String assetData = await rootBundle.loadString('assets/player_data.json');
+      await appJsonFile.writeAsString(assetData);
       debugPrint("JSON file copied to: $jsonFilePath");
-    } else {
-      debugPrint("Asset JSON file not found.");
+    } catch (e) {
+      debugPrint("Error loading asset JSON file: $e");
     }
   } else {
     debugPrint("JSON file already exists at: $jsonFilePath");
@@ -71,9 +66,9 @@ class PlayerData {
 }
 
 Future<PlayerData> loadPlayerData() async {
-  Directory? documentsDirectory = await getApplicationDocumentsDirectory();
-  String appFolderPath = '${documentsDirectory.path}/BlackjackFlutterApp';
-  String jsonFilePath = '$appFolderPath/player_data.json';
+  Directory documentsDirectory = await getApplicationDocumentsDirectory();
+  String jsonFilePath =
+      '${documentsDirectory.path}/BlackjackFlutterApp/player_data.json';
 
   try {
     final file = File(jsonFilePath);
@@ -81,7 +76,6 @@ Future<PlayerData> loadPlayerData() async {
     final data = jsonDecode(response);
     return PlayerData.fromJson(data);
   } catch (e) {
-    //throw errow if that somehow fails
     debugPrint("Error loading player data: $e");
     throw Exception("Failed to load player data.");
   }
@@ -142,28 +136,50 @@ Future<PlayerData>? futurePlayerData;
 
 AudioPlayer? _backgroundPlayer;
 
+double _volume = 1.0; // Range: 0.0 to 1.0
+bool _isMuted = false;
+
+Future<void> setVolume(double volume) async {
+  _volume = volume.clamp(0.0, 1.0); // Ensures volume stays in valid range
+  if (_backgroundPlayer != null) {
+    await _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+  }
+}
+
+Future<void> toggleMute() async {
+  _isMuted = !_isMuted;
+  if (_backgroundPlayer != null) {
+    await _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+  }
+}
+
+
 Future<void> playBackgroundMusic() async {
   print("Attempting to play background music...");
 
   try {
-    // Try to load the asset
-    await rootBundle.load('assets/audio/giornos_theme.mp3');
-    print("Music file loaded successfully.");
-
-    // Proceed with playing the audio
     _backgroundPlayer = AudioPlayer();
-    await _backgroundPlayer!.setSource(AssetSource('audio/giornos_theme.mp3'));
+
     await _backgroundPlayer!.setReleaseMode(ReleaseMode.loop);
+    await _backgroundPlayer!.setSource(AssetSource('audio/giornos_theme.mp3'));
+    await _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
     await _backgroundPlayer!.resume();
+
     print("Music is playing.");
   } catch (e) {
-    print("Error loading or playing music: $e");
+    print("Background music failed to play: $e");
   }
 }
 
 Future<void> stopBackgroundMusic() async {
-  await _backgroundPlayer?.stop();
+  if (_backgroundPlayer != null) {
+    await _backgroundPlayer!.stop();
+    await _backgroundPlayer!.dispose();
+    _backgroundPlayer = null;
+    print("Music stopped.");
+  }
 }
+
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
@@ -286,6 +302,7 @@ class _HomePageContentState extends State<HomePageContent> {
   }
 
   @override
+  
   void initState() {
     super.initState();
     _controller.addListener(() {
@@ -305,42 +322,85 @@ class _HomePageContentState extends State<HomePageContent> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Home')),
-      backgroundColor: const Color.fromARGB(255, 15, 40, 16),
-      body: Column(
-        children: [
-          const SizedBox(height: 20),
-          Text(
-            'Welcome, ${widget.name}!',
-            style: const TextStyle(fontSize: 18, color: Colors.white),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _controller,
-            keyboardType: TextInputType.text,
-            decoration: const InputDecoration(
-              labelText: 'Enter your name',
-              filled: true,
-              fillColor: Colors.white,
+      backgroundColor: const Color.fromARGB(255, 0, 0, 0),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.name.toLowerCase() == 'null' || widget.name.trim().isEmpty
+                  ? 'Welcome!'
+                  : 'Welcome, ${widget.name}!',
+              style: const TextStyle(fontSize: 18, color: Colors.white),
             ),
-          ),
-          const SizedBox(height: 10),
-          ElevatedButton(onPressed: setName, child: const Text('Set Name')),
-          const SizedBox(height: 10),
-          Text(
-            'Balance: \$${widget.balance.toStringAsFixed(2)}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Matches Played: ${widget.matchesPlayed}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Wins: ${widget.wins}',
-            style: const TextStyle(color: Colors.white),
-          ),
-        ],
+            const SizedBox(height: 10),
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.text,
+              decoration: const InputDecoration(
+                labelText: 'Enter your name',
+                filled: true,
+                fillColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(onPressed: setName, child: const Text('Set Name')),
+            const SizedBox(height: 10),
+            Text(
+              'Balance: \$${widget.balance.toStringAsFixed(2)}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Matches Played: ${widget.matchesPlayed}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Wins: ${widget.wins}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Losses: ${widget.matchesPlayed - widget.wins}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            Column(
+  children: [
+    Text("Volume: ${(_volume * 100).round()}%"),
+    Slider(
+      value: _volume,
+      onChanged: (value) {
+        setState(() {
+          _volume = value;
+        });
+        if (_backgroundPlayer != null) {
+          _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+        }
+      },
+      min: 0.0,
+      max: 1.0,
+      divisions: 100,
+      label: "${(_volume * 100).round()}%",
+    ),
+    SwitchListTile(
+      title: Text("Mute"),
+      value: _isMuted,
+      onChanged: (muted) {
+        setState(() {
+          _isMuted = muted;
+        });
+        if (_backgroundPlayer != null) {
+          _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+        }
+      },
+    ),
+  ],
+)
+
+          ],
+        ),
       ),
     );
   }
@@ -626,11 +686,12 @@ class _GameScreenState extends State<GameScreen> {
 
   void gameStart() {
     _updateBetValue();
-    
-    if (_betValue == null ||( _betValue! <= 0 || _betValue! > _currentBalance)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid bet.')),
-      );
+
+    if (_betValue == null ||
+        (_betValue! <= 0 || _betValue! > _currentBalance)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a valid bet.')));
       return;
     }
 
@@ -833,7 +894,8 @@ class _GameScreenState extends State<GameScreen> {
             // Full-screen background image
             Positioned.fill(
               child: Image.asset(
-                "assets/gambling.jpg", filterQuality: FilterQuality.none,
+                "assets/gambling.jpg",
+                filterQuality: FilterQuality.none,
                 fit: BoxFit.cover,
               ),
             ),
@@ -844,7 +906,10 @@ class _GameScreenState extends State<GameScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Welcome, ${widget.name}!',
+                    widget.name.toLowerCase() == 'null' ||
+                            widget.name.trim().isEmpty
+                        ? 'Welcome!'
+                        : 'Welcome, ${widget.name}!',
                     style: const TextStyle(fontSize: 18, color: Colors.white),
                   ),
                   Text(
