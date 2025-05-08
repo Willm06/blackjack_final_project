@@ -2,5 +2,8 @@
     "name": "null",
     "balance": 0.0,
     "wins": 0,
-    "matches_played": 0
+    "matches_played": 0,
+    "volume": 1.0,
+    "background_muted": false,
+    "effects_muted": false
 }

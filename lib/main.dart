@@ -47,12 +47,18 @@ class PlayerData {
   double balance;
   int wins;
   int matchesPlayed;
+  double volume;
+  bool backgroundMuted;
+  bool effectsMuted;
 
   PlayerData({
     required this.name,
     required this.balance,
     required this.wins,
     required this.matchesPlayed,
+    required this.volume,
+    required this.backgroundMuted,
+    required this.effectsMuted,
   });
 
   factory PlayerData.fromJson(Map<String, dynamic> json) {
@@ -61,6 +67,9 @@ class PlayerData {
       balance: json['balance'],
       wins: json['wins'],
       matchesPlayed: json['matches_played'],
+      volume: json['volume'],
+      backgroundMuted: json['background_muted'],
+      effectsMuted: json['effects_muted'],
     );
   }
 }
@@ -136,23 +145,25 @@ Future<PlayerData>? futurePlayerData;
 
 AudioPlayer? _backgroundPlayer;
 
-double _volume = 1.0; // Range: 0.0 to 1.0
-bool _isMuted = false;
+double _volume = 0.0; // Range: 0.0 to 1.0
+bool _isBackgroundMuted = true;
+bool _isSoundEffectMuted = true;
+
+bool _gameInProgress = false;
 
 Future<void> setVolume(double volume) async {
   _volume = volume.clamp(0.0, 1.0); // Ensures volume stays in valid range
   if (_backgroundPlayer != null) {
-    await _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+    await _backgroundPlayer!.setVolume(_isBackgroundMuted ? 0.0 : _volume);
   }
 }
 
 Future<void> toggleMute() async {
-  _isMuted = !_isMuted;
+  _isBackgroundMuted = !_isBackgroundMuted;
   if (_backgroundPlayer != null) {
-    await _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+    await _backgroundPlayer!.setVolume(_isBackgroundMuted ? 0.0 : _volume);
   }
 }
-
 
 Future<void> playBackgroundMusic() async {
   print("Attempting to play background music...");
@@ -161,8 +172,8 @@ Future<void> playBackgroundMusic() async {
     _backgroundPlayer = AudioPlayer();
 
     await _backgroundPlayer!.setReleaseMode(ReleaseMode.loop);
-    await _backgroundPlayer!.setSource(AssetSource('audio/giornos_theme.mp3'));
-    await _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
+    await _backgroundPlayer!.setSource(AssetSource('audio/jazz-lounge.mp3'));
+    await _backgroundPlayer!.setVolume(_isBackgroundMuted ? 0.0 : _volume);
     await _backgroundPlayer!.resume();
 
     print("Music is playing.");
@@ -180,12 +191,34 @@ Future<void> stopBackgroundMusic() async {
   }
 }
 
+Future<void> playSoundEffect(String assetPath, {double? volume}) async {
+  final effectPlayer = AudioPlayer();
+  try {
+    await effectPlayer.setSource(AssetSource(assetPath));
+    await effectPlayer.setVolume(
+      _isSoundEffectMuted ? 0.0 : (volume ?? _volume),
+    );
+    await effectPlayer.resume();
+    // Dispose the player after the sound is done
+    effectPlayer.onPlayerComplete.listen((event) {
+      effectPlayer.dispose();
+    });
+  } catch (e) {
+    print("Failed to play sound effect: $e");
+  }
+}
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
   void _onItemTapped(int index) {
     setState(() {
+      if (_gameInProgress) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Game in progress.")));
+        return;
+      }
       futurePlayerData = loadPlayerData();
       _selectedIndex = index;
     });
@@ -205,7 +238,22 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
     futurePlayerData = loadPlayerData();
+    futurePlayerData!
+        .then((data) {
+          setState(() {
+            _volume = data.volume;
+            _isBackgroundMuted = data.backgroundMuted;
+            _isSoundEffectMuted = data.effectsMuted;
+          });
+
+          // Optionally: apply the volume settings to the audio player
+          setVolume(_volume);
+        })
+        .catchError((e) {
+          debugPrint("Failed to load player data in initState: $e");
+        });
   }
 
   @override
@@ -289,6 +337,10 @@ class _HomePageContentState extends State<HomePageContent> {
   final TextEditingController _controller = TextEditingController();
   String? _setNameTo;
 
+  double _localVolume = _volume;
+  bool _localBackgroundMuted = _isBackgroundMuted;
+  bool _localSoundEffectMuted = _isSoundEffectMuted;
+
   void setName() async {
     _setNameTo = _controller.text;
     if (_setNameTo == '') {
@@ -301,8 +353,13 @@ class _HomePageContentState extends State<HomePageContent> {
     widget.onPlayerDataUpdated(loadPlayerData());
   }
 
+  void saveSoundSettings() async {
+    await writeToJson('volume', _localVolume);
+    await writeToJson('background_muted', _localBackgroundMuted);
+    await writeToJson('effects_muted', _localSoundEffectMuted);
+  }
+
   @override
-  
   void initState() {
     super.initState();
     _controller.addListener(() {
@@ -366,39 +423,55 @@ class _HomePageContentState extends State<HomePageContent> {
               'Losses: ${widget.matchesPlayed - widget.wins}',
               style: const TextStyle(color: Colors.white),
             ),
+            const SizedBox(height: 20),
             Column(
-  children: [
-    Text("Volume: ${(_volume * 100).round()}%"),
-    Slider(
-      value: _volume,
-      onChanged: (value) {
-        setState(() {
-          _volume = value;
-        });
-        if (_backgroundPlayer != null) {
-          _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
-        }
-      },
-      min: 0.0,
-      max: 1.0,
-      divisions: 100,
-      label: "${(_volume * 100).round()}%",
-    ),
-    SwitchListTile(
-      title: Text("Mute"),
-      value: _isMuted,
-      onChanged: (muted) {
-        setState(() {
-          _isMuted = muted;
-        });
-        if (_backgroundPlayer != null) {
-          _backgroundPlayer!.setVolume(_isMuted ? 0.0 : _volume);
-        }
-      },
-    ),
-  ],
-)
-
+              children: [
+                const Text("Volume", style: TextStyle(color: Colors.white)),
+                Slider(
+                  value: _localVolume,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: null,
+                  label: (_localVolume * 100).round().toString(),
+                  onChanged: (double value) {
+                    setState(() {
+                      _localVolume = value;
+                    });
+                    setVolume(value);
+                  },
+                ),
+                SwitchListTile(
+                  title: const Text(
+                    "Mute Background Music",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  value: _localBackgroundMuted,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _localBackgroundMuted = value; // update global
+                    });
+                    toggleMute(); // background music toggle
+                  },
+                ),
+                SwitchListTile(
+                  title: const Text(
+                    "Mute Sound Effects",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  value: _localSoundEffectMuted,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _localSoundEffectMuted = value;
+                    });
+                    _isSoundEffectMuted = value; // update global
+                  },
+                ),
+                ElevatedButton(
+                  onPressed: saveSoundSettings,
+                  child: const Text('Save Sound Settings'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -433,7 +506,7 @@ class _FlipPlayingCardState extends State<FlipPlayingCard>
     super.initState();
     _showFront = widget.showFront;
     _controller = AnimationController(
-      duration: Duration(milliseconds: 500),
+      duration: Duration(milliseconds: 400),
       vsync: this,
     );
 
@@ -684,7 +757,8 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  void gameStart() {
+  void gameStart() async {
+    _gameInProgress = true;
     _updateBetValue();
 
     if (_betValue == null ||
@@ -696,8 +770,11 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     setState(() {
+      _gameInProgress = true;
       _resetGame();
     });
+
+    await playSoundEffect('audio/flip-card.mp3');
 
     Future.delayed(const Duration(milliseconds: 300), () {
       setState(() {
@@ -705,13 +782,13 @@ class _GameScreenState extends State<GameScreen> {
         indexDealerCardsToShow = [0];
       });
     });
+
     Future.delayed(const Duration(milliseconds: 600), () {
       if (_handValue(playerCards) == 21) {
         setState(() {
           playerWin = true;
           indexDealerCardsToShow.add(1); // Flip hidden dealer card
         });
-        _evaluateWinner(); // Immediately evaluate winner
       }
     });
   }
@@ -739,7 +816,8 @@ class _GameScreenState extends State<GameScreen> {
     _drawCard(playerCards, isPlayer: true);
   }
 
-  void playerHit() {
+  Future<void> playerHit() async {
+    await playSoundEffect('audio/flip-card.mp3');
     _drawCard(playerCards, isPlayer: true);
     Future.delayed(const Duration(milliseconds: 300), () {
       setState(() {
@@ -749,6 +827,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _playerStand() async {
+    await playSoundEffect('audio/flip-card.mp3');
     setState(() {
       cardNotShown = false;
       indexDealerCardsToShow.add(1);
@@ -763,6 +842,7 @@ class _GameScreenState extends State<GameScreen> {
     if (!playerBust && playerValue != 21) {
       while (_handValue(dealerCards) < 17) {
         _drawCard(dealerCards, isPlayer: false);
+        await playSoundEffect('audio/flip-card.mp3');
         await Future.delayed(const Duration(milliseconds: 300));
         setState(() => indexDealerCardsToShow.add(dealerCards.length - 1));
       }
@@ -778,13 +858,32 @@ class _GameScreenState extends State<GameScreen> {
     if (playerBust) {
       result = 'You busted, Dealer wins';
       _currentBalance -= _betValue!;
+      if (_currentBalance > 0) {
+        playSoundEffect('audio/brass-fail.mp3');
+      } else {
+        playSoundEffect('audio/downer-noise.mp3');
+      }
     } else if (dealerBust || playerValue > dealerValue) {
       result = 'You win!';
       _currentBalance += _betValue!;
       _currentWins++;
+      if (_betValue! * 2 == _currentBalance) {
+        playSoundEffect('audio/fanfare.mp3');
+      } else {
+        playSoundEffect('audio/cash-register-purchase.mp3');
+      }
     } else if (dealerValue > playerValue) {
       result = 'Dealer wins';
       _currentBalance -= _betValue!;
+      if (_currentBalance > 0) {
+        if (dealerCards.length > 4 || dealerValue == 21) {
+          playSoundEffect('audio/the-simpsons-nelsons-haha.mp3');
+        } else {
+          playSoundEffect('audio/brass-fail.mp3');
+        }
+      } else {
+        playSoundEffect('audio/downer-noise.mp3');
+      }
     } else {
       result = 'Push';
     }
@@ -796,6 +895,9 @@ class _GameScreenState extends State<GameScreen> {
     await writeToJson('matches_played', _currentMatchesPlayed);
 
     _showResultDialog(result);
+    setState(() {
+      _gameInProgress = false;
+    });
   }
 
   void _showResultDialog(String result) {
@@ -855,11 +957,15 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  void doubleDown() {
+  void doubleDown() async {
     if ((_betValue ?? 0) * 2 <= _currentBalance) {
       _betValue = (_betValue ?? 0) * 2;
-      playerHit();
-      if (!playerBust) _playerStand();
+      await playerHit();
+      if (_handValue(playerCards) < 21) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+            _playerStand();
+        });
+      }
     } else {
       ScaffoldMessenger.of(
         context,
@@ -926,18 +1032,20 @@ class _GameScreenState extends State<GameScreen> {
                       fillColor: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: gameStart,
-                    child: const Text('Place Bet & Start Game'),
-                  ),
+                  if (!_gameInProgress) ...[
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: gameStart,
+                      child: const Text('Place Bet & Start Game'),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   if (playerCards.isNotEmpty) ...[
                     const Text(
                       'Your Cards:',
                       style: TextStyle(color: Colors.white),
                     ),
-                    Row(
+                    Wrap(
                       children:
                           playerCards.asMap().entries.map((entry) {
                             int index = entry.key;
@@ -967,7 +1075,7 @@ class _GameScreenState extends State<GameScreen> {
                       'Dealer Cards:',
                       style: TextStyle(color: Colors.white),
                     ),
-                    Row(
+                    Wrap(
                       children:
                           dealerCards.asMap().entries.map((entry) {
                             int index = entry.key;
@@ -999,23 +1107,22 @@ class _GameScreenState extends State<GameScreen> {
                     ],
                     if (cardNotShown) ...[
                       const SizedBox(height: 20),
-                      Row(
+                      Wrap(
+                        spacing: 10, // Space between buttons
+                        runSpacing: 10, // Space between rows
                         children: [
                           ElevatedButton(
                             onPressed: playerHit,
                             child: const Text('Hit'),
                           ),
-                          const SizedBox(width: 10),
                           ElevatedButton(
                             onPressed: _playerStand,
                             child: const Text('Stand'),
                           ),
-                          const SizedBox(width: 10),
                           ElevatedButton(
                             onPressed: doubleDown,
                             child: const Text('Double Down'),
                           ),
-                          const SizedBox(width: 10),
                           ElevatedButton(
                             onPressed: split,
                             child: const Text('Split Hand'),
@@ -1049,6 +1156,9 @@ class _GameScreenState extends State<GameScreen> {
                           }).toList(),
                     ),
                   ],
+                  SizedBox(
+                    height: 50,
+                  )
                 ],
               ),
             ),

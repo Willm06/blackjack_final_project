@@ -13,6 +13,7 @@ dependencies:
   path_provider: ^2.1.5
   playing_cards: ^0.4.1+11
   audioplayers: ^5.2.1
+  flutter_xlider: ^3.5.0
 
 dev_dependencies:
   flutter_test:
@@ -24,4 +25,10 @@ flutter:
   assets:
     - assets/player_data.json
     - assets/gambling.jpg
-    - assets/audio/giornos_theme.mp3
+    - assets/audio/jazz-lounge.mp3
+    - assets/audio/cash-register-purchase.mp3
+    - assets/audio/the-simpsons-nelsons-haha.mp3
+    - assets/audio/flip-card.mp3
+    - assets/audio/downer-noise.mp3
+    - assets/audio/brass-fail.mp3
+    - assets/audio/fanfare.mp3
