@@ -45,6 +45,7 @@ Future<void> createAppFolder() async {
 class PlayerData {
   String name;
   double balance;
+  double highestBalance;
   int wins;
   int matchesPlayed;
   double volume;
@@ -54,6 +55,7 @@ class PlayerData {
   PlayerData({
     required this.name,
     required this.balance,
+    required this.highestBalance,
     required this.wins,
     required this.matchesPlayed,
     required this.volume,
@@ -65,6 +67,7 @@ class PlayerData {
     return PlayerData(
       name: json['name'],
       balance: json['balance'],
+      highestBalance: json['highest_balance'],
       wins: json['wins'],
       matchesPlayed: json['matches_played'],
       volume: json['volume'],
@@ -124,7 +127,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
+        primarySwatch: Colors.red,
         textTheme: TextTheme(
           bodyLarge: const TextStyle(color: Colors.black, fontSize: 18),
           bodyMedium: TextStyle(color: Colors.grey[600], fontSize: 16),
@@ -272,6 +276,7 @@ class _HomePageState extends State<HomePage> {
               HomePageContent(
                 name: snapshot.data!.name,
                 balance: snapshot.data!.balance,
+                highestBalance: snapshot.data!.highestBalance,
                 wins: snapshot.data!.wins,
                 matchesPlayed: snapshot.data!.matchesPlayed,
                 onPlayerDataUpdated: updatePlayerData,
@@ -279,6 +284,7 @@ class _HomePageState extends State<HomePage> {
               GameScreen(
                 name: snapshot.data!.name,
                 balance: snapshot.data!.balance,
+                highestBalance: snapshot.data!.highestBalance,
                 wins: snapshot.data!.wins,
                 matchesPlayed: snapshot.data!.matchesPlayed,
                 onPlayerDataUpdated: updatePlayerData,
@@ -318,6 +324,7 @@ class HomePageContent extends StatefulWidget {
     super.key,
     required this.name,
     required this.balance,
+    required this.highestBalance,
     required this.wins,
     required this.matchesPlayed,
     required this.onPlayerDataUpdated,
@@ -325,6 +332,7 @@ class HomePageContent extends StatefulWidget {
 
   final String name;
   final double balance;
+  final double highestBalance;
   final int wins;
   final int matchesPlayed;
   final Function(Future<PlayerData>) onPlayerDataUpdated;
@@ -340,6 +348,8 @@ class _HomePageContentState extends State<HomePageContent> {
   double _localVolume = _volume;
   bool _localBackgroundMuted = _isBackgroundMuted;
   bool _localSoundEffectMuted = _isSoundEffectMuted;
+
+  late double _currentBalance;
 
   void setName() async {
     _setNameTo = _controller.text;
@@ -359,9 +369,18 @@ class _HomePageContentState extends State<HomePageContent> {
     await writeToJson('effects_muted', _localSoundEffectMuted);
   }
 
+  void resetBalance() async {
+    await writeToJson('balance', 500.0);
+    widget.onPlayerDataUpdated;
+    setState(() {
+      _currentBalance = 500.0;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _currentBalance = widget.balance;
     _controller.addListener(() {
       setState(() {
         _setNameTo = _controller.text;
@@ -405,7 +424,12 @@ class _HomePageContentState extends State<HomePageContent> {
             ElevatedButton(onPressed: setName, child: const Text('Set Name')),
             const SizedBox(height: 10),
             Text(
-              'Balance: \$${widget.balance.toStringAsFixed(2)}',
+              'Current Balance: \$${_currentBalance.toStringAsFixed(2)}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Highest Balance: \$${widget.highestBalance.toStringAsFixed(2)}',
               style: const TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 10),
@@ -422,6 +446,11 @@ class _HomePageContentState extends State<HomePageContent> {
             Text(
               'Losses: ${widget.matchesPlayed - widget.wins}',
               style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: resetBalance,
+              child: const Text('Reset Balance'),
             ),
             const SizedBox(height: 20),
             Column(
@@ -585,6 +614,7 @@ class GameScreen extends StatefulWidget {
     super.key,
     required this.name,
     required this.balance,
+    required this.highestBalance,
     required this.wins,
     required this.matchesPlayed,
     required this.onPlayerDataUpdated,
@@ -592,6 +622,7 @@ class GameScreen extends StatefulWidget {
 
   final String name;
   final double balance;
+  final double highestBalance;
   final int wins;
   final int matchesPlayed;
   final Function(Future<PlayerData>) onPlayerDataUpdated;
@@ -642,7 +673,9 @@ class _GameScreenState extends State<GameScreen> {
 
   void _updateBetValue() {
     setState(() {
-      _betValue = double.tryParse(_controller.text);
+      final parsed = double.tryParse(_controller.text);
+      _betValue =
+          parsed != null ? double.parse(parsed.toStringAsFixed(2)) : null;
     });
   }
 
@@ -757,9 +790,30 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  void placeBet() {
+    _updateBetValue();
+    gameStart();
+  }
+
+  void betTenPercent() {
+    double tenPercent = double.parse(
+      (_currentBalance * 0.1).toStringAsFixed(2),
+    );
+    if (tenPercent <= 0 || tenPercent > _currentBalance) {
+      allIn();
+    } else {
+      _betValue = tenPercent;
+      gameStart();
+    }
+  }
+
+  void allIn() {
+    _betValue = _currentBalance;
+    gameStart();
+  }
+
   void gameStart() async {
     _gameInProgress = true;
-    _updateBetValue();
 
     if (_betValue == null ||
         (_betValue! <= 0 || _betValue! > _currentBalance)) {
@@ -867,6 +921,9 @@ class _GameScreenState extends State<GameScreen> {
       result = 'You win!';
       _currentBalance += _betValue!;
       _currentWins++;
+      if (_currentBalance > widget.highestBalance) {
+        await writeToJson('highest_balance', _currentBalance);
+      }
       if (_betValue! * 2 == _currentBalance) {
         playSoundEffect('audio/fanfare.mp3');
       } else {
@@ -886,6 +943,7 @@ class _GameScreenState extends State<GameScreen> {
       }
     } else {
       result = 'Push';
+      playSoundEffect('audio/card-drop.mp3');
     }
 
     _currentMatchesPlayed++;
@@ -963,7 +1021,7 @@ class _GameScreenState extends State<GameScreen> {
       await playerHit();
       if (_handValue(playerCards) < 21) {
         Future.delayed(const Duration(milliseconds: 300), () {
-            _playerStand();
+          _playerStand();
         });
       }
     } else {
@@ -1034,9 +1092,23 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                   if (!_gameInProgress) ...[
                     const SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: gameStart,
-                      child: const Text('Place Bet & Start Game'),
+                    Wrap(
+                      spacing: 10, // Space between buttons
+                      runSpacing: 10, // Space between rows
+                      children: [
+                        ElevatedButton(
+                          onPressed: gameStart,
+                          child: const Text('Place Bet & Start Game'),
+                        ),
+                        ElevatedButton(
+                          onPressed: betTenPercent,
+                          child: const Text('Bet 10%'),
+                        ),
+                        ElevatedButton(
+                          onPressed: allIn,
+                          child: const Text('All In'),
+                        ),
+                      ],
                     ),
                   ],
                   const SizedBox(height: 20),
@@ -1156,9 +1228,7 @@ class _GameScreenState extends State<GameScreen> {
                           }).toList(),
                     ),
                   ],
-                  SizedBox(
-                    height: 50,
-                  )
+                  SizedBox(height: 50),
                 ],
               ),
             ),

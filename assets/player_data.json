@@ -1,6 +1,7 @@
 {
     "name": "null",
-    "balance": 0.0,
+    "balance": 500.0,
+    "highest_balance": 500.0,
     "wins": 0,
     "matches_played": 0,
     "volume": 1.0,
