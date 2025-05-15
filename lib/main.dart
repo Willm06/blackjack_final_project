@@ -647,6 +647,7 @@ class _GameScreenState extends State<GameScreen> {
   bool dealerBust = false;
   bool playerWin = false;
   bool cardNotShown = true;
+  bool actionInProgress = false;
 
   List<int> indexPlayerCardsToShow = [];
   List<int> indexDealerCardsToShow = [];
@@ -825,6 +826,7 @@ class _GameScreenState extends State<GameScreen> {
 
     setState(() {
       _gameInProgress = true;
+      actionInProgress = false;
       _resetGame();
     });
 
@@ -871,16 +873,22 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> playerHit() async {
+    if (actionInProgress) {
+      return;
+    }
+    actionInProgress = true;
     await playSoundEffect('audio/flip-card.mp3');
     _drawCard(playerCards, isPlayer: true);
     Future.delayed(const Duration(milliseconds: 300), () {
       setState(() {
         indexPlayerCardsToShow.add(playerCards.length - 1);
       });
+      actionInProgress = false;
     });
   }
 
   void _playerStand() async {
+    actionInProgress = true;
     await playSoundEffect('audio/flip-card.mp3');
     setState(() {
       cardNotShown = false;
@@ -954,6 +962,7 @@ class _GameScreenState extends State<GameScreen> {
 
     _showResultDialog(result);
     setState(() {
+      actionInProgress = false;
       _gameInProgress = false;
     });
   }
@@ -1184,19 +1193,36 @@ class _GameScreenState extends State<GameScreen> {
                         runSpacing: 10, // Space between rows
                         children: [
                           ElevatedButton(
-                            onPressed: playerHit,
+                            onPressed:
+                                actionInProgress || playerBust || playerWin
+                                    ? null
+                                    : () {
+                                      playerHit();
+                                    },
                             child: const Text('Hit'),
                           ),
                           ElevatedButton(
-                            onPressed: _playerStand,
+                            onPressed: actionInProgress || playerBust || playerWin
+                                    ? null
+                                    : () {
+                                      _playerStand();
+                                    },
                             child: const Text('Stand'),
                           ),
                           ElevatedButton(
-                            onPressed: doubleDown,
+                            onPressed: actionInProgress || playerBust || playerWin
+                                    ? null
+                                    : () {
+                                      doubleDown();
+                                    },
                             child: const Text('Double Down'),
                           ),
                           ElevatedButton(
-                            onPressed: split,
+                            onPressed: actionInProgress || playerBust || playerWin
+                                    ? null
+                                    : () {
+                                      split();
+                                    },
                             child: const Text('Split Hand'),
                           ),
                         ],
@@ -1245,7 +1271,7 @@ class RuleScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Third Page')),
+      appBar: AppBar(title: const Text('Rules Page')),
       body: Center(
         child: Column(
           children: <Widget>[
@@ -1259,8 +1285,12 @@ class RuleScreen extends StatelessWidget {
               "You may 'HIT' to draw a random card from the deck, faces are worth 10 and aces are worth 11 or 1!",
             ),
             const Text(""),
+            const Text("You may also double down -> Double your bet but only get 1 card"),
+            const Text(""),
+            const Text("If you have two of the same value cards, also same face, you may split to have another running hand"),
+            const Text(""),
             const Text(
-              "If you draw a card and are now worth over 21, you bust and lose",
+              "If you draw a card and are now over 21, you bust and lose",
             ),
             const Text(""),
             const Text(
@@ -1274,7 +1304,6 @@ class RuleScreen extends StatelessWidget {
             const Text(
               "After you and the dealer are both finished, whoever has a higher score will win",
             ),
-            const Text(""),
             const Text(""),
           ],
         ),
